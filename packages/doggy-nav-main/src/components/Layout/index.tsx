@@ -17,6 +17,7 @@ import RightSideToolbar from '../RightSideToolbar';
 import LightbulbRope from '../LightBulb';
 import router from 'next/router';
 import AppFooter from '../Footer';
+import SiteMetadataHead from '../SiteMetadataHead';
 
 export default function RootLayout({
   children,
@@ -102,6 +103,7 @@ export default function RootLayout({
   return (
     <I18nextProvider i18n={i18n}>
       <ConfigProvider componentConfig={{ Menu: { theme } }}>
+        <SiteMetadataHead />
         <div className="flex h-screen">
           {/* Sidebar (desktop only) */}
           {!isMobile && (
@@ -130,7 +132,7 @@ export default function RootLayout({
               className="flex-1 overflow-y-auto glass-light dark:glass-dark"
             >
               <div className="p-4">
-                <div className="min-h-screen bg-theme-background transition-colors flex flex-col">
+                <div className="rounded-t-[1rem] min-h-screen bg-theme-background transition-colors flex flex-col">
                   <div className="flex-1">{children}</div>
                   <AppFooter />
                 </div>

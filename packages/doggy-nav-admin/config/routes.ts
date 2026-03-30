@@ -36,7 +36,6 @@ export default [
     path: '/nav/category',
     component: './nav/Category',
   },
-  { name: '标签列表', icon: 'tag', path: '/nav/tag', component: './nav/Tag' },
   {
     name: '用户管理',
     icon: 'user',
@@ -57,6 +56,13 @@ export default [
     path: '/role/manage',
     component: './role',
     access: 'isSysadmin',
+  },
+  {
+    name: '站点定制',
+    icon: 'setting',
+    path: '/settings/site',
+    component: './SiteSettings',
+    access: 'isAdmin',
   },
   {
     name: '邮件通知设置',
@@ -131,12 +137,6 @@ export const pageTitles: Record<
     showUserMenu: true,
     showSearch: false,
   },
-  '/nav/tag': {
-    title: '标签管理',
-    subtitle: '管理网站标签',
-    showUserMenu: true,
-    showSearch: false,
-  },
   '/nav/audit': {
     title: '审核管理',
     subtitle: '审核网站提交',
@@ -164,6 +164,12 @@ export const pageTitles: Record<
   '/settings/email': {
     title: '邮件通知设置',
     subtitle: '配置 SMTP 与通知收件人',
+    showUserMenu: true,
+    showSearch: false,
+  },
+  '/settings/site': {
+    title: '站点定制',
+    subtitle: '配置站点品牌、SEO 与反馈入口',
     showUserMenu: true,
     showSearch: false,
   },

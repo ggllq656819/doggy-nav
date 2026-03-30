@@ -6,7 +6,6 @@ export const API_NAV = '/api/nav';
 export const API_NAV_AUDIT = '/api/nav/audit';
 export const API_CATEGORY_LIST = '/api/category/list';
 export const API_CATEGORY = '/api/category';
-export const API_TAG = '/api/tag';
 export const API_TAG_list = '/api/tag/list';
 export const API_INVITE_CODES = '/api/invite-codes';
 export const API_INVITE_CODES_LIST = '/api/invite-codes/list';
@@ -14,6 +13,7 @@ export const API_ROLES = '/api/roles';
 export const API_GROUPS = '/api/groups';
 export const API_GROUP_MEMBERS = (id: string) => `/api/groups/${id}/members`;
 export const API_EMAIL_SETTINGS = '/api/email-settings';
+export const API_SITE_SETTINGS = '/api/site-settings';
 
 export async function login(data: { username: string; password: string }) {
   return request({
@@ -36,6 +36,22 @@ export async function updateEmailSettings(data: any) {
     method: 'PUT',
     data,
     msg: 'Email settings updated successfully',
+  });
+}
+
+export async function getSiteSettings() {
+  return request({
+    url: API_SITE_SETTINGS,
+    method: 'GET',
+  });
+}
+
+export async function updateSiteSettings(data: any) {
+  return request({
+    url: API_SITE_SETTINGS,
+    method: 'PUT',
+    data,
+    msg: 'Site settings updated successfully',
   });
 }
 

@@ -100,10 +100,21 @@ export interface EmailSettings {
   updatedAt?: string;
 }
 
+export interface SiteSettings {
+  siteTitle?: string | null;
+  logoUrl?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  seoKeywords?: string[];
+  copyrightText?: string | null;
+  feedbackUrl?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Tag {
   id: ID;
   name: string;
-  parentName?: string | null;
 }
 
 export interface FavoriteFolder {

@@ -36,7 +36,7 @@ export interface NavItem {
 export interface Tag {
   id: string;
   name: string;
-  parentName?: string;
+  count?: number;
   value?: string;
   label?: string;
 }
@@ -103,4 +103,14 @@ export interface Affiche {
   linkTarget?: string | null;
   active: boolean;
   order?: number | null;
+}
+
+export interface SiteSettings {
+  siteTitle?: string | null;
+  logoUrl?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  seoKeywords?: string[];
+  copyrightText?: string | null;
+  feedbackUrl?: string | null;
 }

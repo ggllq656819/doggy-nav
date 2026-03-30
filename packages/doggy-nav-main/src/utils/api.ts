@@ -9,6 +9,7 @@ import type {
   OAuthProvider,
   SystemVersionInfo,
   Affiche,
+  SiteSettings,
 } from '@/types';
 
 export const API_NAV_RANKING = '/api/nav/ranking';
@@ -26,9 +27,15 @@ const api = {
 
   // Find nav by category id - returns array of categories with nested nav lists
   findNavByCategory: (
-    categoryId: string
+    categoryId: string,
+    params?: { tags?: string[] }
   ): Promise<Array<{ _id: string; id: string; name: string; list: NavItem[] }>> =>
-    axios.get(`/api/nav/find?categoryId=${categoryId}`),
+    axios.get('/api/nav/find', {
+      params: {
+        categoryId,
+        ...(params?.tags && params.tags.length > 0 ? { tags: params.tags.join(',') } : {}),
+      },
+    }),
 
   // Find nav by id (single item)
   findNavById: (id: string): Promise<NavItem> => axios.get(`/api/nav?id=${id}`),
@@ -43,8 +50,14 @@ const api = {
     page?: number;
     limit?: number;
     keyword?: string;
+    tags?: string[];
   }): Promise<{ data: NavItem[]; total: number; pageNumber: number }> =>
-    axios.get(API_NAV_SEARCH, { params }),
+    axios.get(API_NAV_SEARCH, {
+      params: {
+        ...params,
+        ...(params?.tags && params.tags.length > 0 ? { tags: params.tags.join(',') } : {}),
+      },
+    }),
 
   // Get full/paginated nav list (server /api/nav/list)
   getNavAll: (params?: {
@@ -53,9 +66,15 @@ const api = {
     status?: number;
     categoryId?: string;
     name?: string;
+    tags?: string[];
     year?: number;
   }): Promise<{ data: NavItem[]; total: number; pageNumber: number }> =>
-    axios.get(API_NAV_LIST, { params }),
+    axios.get(API_NAV_LIST, {
+      params: {
+        ...params,
+        ...(params?.tags && params.tags.length > 0 ? { tags: params.tags.join(',') } : {}),
+      },
+    }),
 
   // Get random nav items
   getRandomNav: (count?: number): Promise<NavItem[]> =>
@@ -148,6 +167,10 @@ const api = {
 
   // Affiche / announcements
   getActiveAffiches: (): Promise<Affiche[]> => axios.get('/api/affiches/active'),
+
+  // Site customization
+  getPublicSiteSettings: (): Promise<SiteSettings | null> =>
+    axios.get('/api/site-settings/public'),
 };
 
 export default api;
