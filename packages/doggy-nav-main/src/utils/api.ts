@@ -13,17 +13,46 @@ import type {
   ToolOutputDirection,
   ToolOutputPublication,
 } from '@/types';
+import type { SupportCurrency } from '@/config/aboutMe';
 
 export const API_NAV_RANKING = '/api/nav/ranking';
 export const API_NAV = '/api/nav';
 export const API_NAV_SEARCH = '/api/nav/search';
 export const API_NAV_ADD = '/api/nav/add';
 export const API_NAV_REPTILE = '/api/nav/reptile';
+export const API_AI_CHAT = '/api/ai/chat';
+export const API_AI_RECOMMENDATION_AUTOFILL = '/api/ai/tasks/recommendation-autofill';
 export const API_TAG_LIST = '/api/tag/list';
 export const API_NAV_RANDOM = '/api/nav/random';
 export const API_NAV_LIST = '/api/nav/list';
 
 const api = {
+  chatWithAi: (data: {
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+    temperature?: number;
+    max_tokens?: number;
+    max_completion_tokens?: number;
+    top_p?: number;
+    stop?: string | string[] | null;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    response_format?: unknown;
+    thinking?: Record<string, unknown>;
+    extra_body?: Record<string, unknown>;
+  }): Promise<{
+    choices?: Array<{ message?: { role?: string; content?: string } }>;
+  }> => axios.post(API_AI_CHAT, data),
+
+  aiRecommendationAutofill: (data: {
+    url: string;
+  }): Promise<{
+    name?: string;
+    desc?: string;
+    detail?: string;
+    logo?: string;
+    tags?: string[];
+  }> => axios.post(API_AI_RECOMMENDATION_AUTOFILL, data),
+
   // Get category list
   getCategoryList: (): Promise<Category[]> => axios.get('/api/category/list'),
 
@@ -86,7 +115,11 @@ const api = {
   getTagList: (): Promise<{ data: Tag[] }> => axios.get(API_TAG_LIST),
 
   // Get current user's groups (if authenticated)
-  getGroups: (): Promise<{ data: Array<{ id: string; slug: string; displayName?: string }>; total: number; pageNumber: number }> => axios.get('/api/groups'),
+  getGroups: (): Promise<{
+    data: Array<{ id: string; slug: string; displayName?: string }>;
+    total: number;
+    pageNumber: number;
+  }> => axios.get('/api/groups'),
 
   // Add navigation (reptile)
   addNav: (data: {
@@ -171,8 +204,7 @@ const api = {
   getActiveAffiches: (): Promise<Affiche[]> => axios.get('/api/affiches/active'),
 
   // Site customization
-  getPublicSiteSettings: (): Promise<SiteSettings | null> =>
-    axios.get('/api/site-settings/public'),
+  getPublicSiteSettings: (): Promise<SiteSettings | null> => axios.get('/api/site-settings/public'),
 
   getToolOutputPublication: (): Promise<ToolOutputPublication | null> =>
     axios.get('/api/tool-outputs/converter'),
@@ -189,6 +221,11 @@ const api = {
 
   deleteToolOutputPublication: (): Promise<{ ok: boolean }> =>
     axios.delete('/api/tool-outputs/converter'),
+
+  createCoffeeCheckoutSession: (data: {
+    amount: number;
+    currency: SupportCurrency;
+  }): Promise<{ url: string }> => axios.post('/api/payments/coffee/checkout', data),
 };
 
 export default api;

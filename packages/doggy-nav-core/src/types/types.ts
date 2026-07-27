@@ -1,3 +1,5 @@
+import type { SupportPaymentSettings } from './supportPayments';
+
 export type ID = string;
 
 export interface Group {
@@ -100,6 +102,14 @@ export interface EmailSettings {
   updatedAt?: string;
 }
 
+export interface CreatorProfileSettings {
+  name?: string | null;
+  title?: string | null;
+  headline?: string | null;
+  bio?: string | null;
+  mission?: string | null;
+}
+
 export interface SiteSettings {
   siteTitle?: string | null;
   logoUrl?: string | null;
@@ -108,6 +118,8 @@ export interface SiteSettings {
   seoKeywords?: string[];
   copyrightText?: string | null;
   feedbackUrl?: string | null;
+  creatorProfile?: CreatorProfileSettings | null;
+  supportSettings?: SupportPaymentSettings | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -143,11 +155,30 @@ export type FavoriteUnionItem =
 
 export interface Prompt {
   id: ID;
+  code?: string;
   name: string;
   content: string;
   active: boolean;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type AiProviderKind = 'openai-compatible' | 'mimo';
+
+export interface AiProvider {
+  id: ID;
+  name: string;
+  provider: AiProviderKind;
+  baseURL: string;
+  model: string;
+  active: boolean;
+  apiKeySet: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AiProviderConfig extends AiProvider {
+  apiKey: string;
 }
 
 export interface Affiche {

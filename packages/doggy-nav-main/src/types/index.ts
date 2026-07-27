@@ -3,6 +3,7 @@ export interface Category {
   name: string;
   categoryId: string;
   createAt: number;
+  description?: string;
   icon?: string;
   children?: Category[];
   showInMenu: boolean;
@@ -105,6 +106,31 @@ export interface Affiche {
   order?: number | null;
 }
 
+export type SupportCurrency = 'usd' | 'hkd';
+
+export interface CreatorProfileSettings {
+  name?: string | null;
+  title?: string | null;
+  headline?: string | null;
+  bio?: string | null;
+  mission?: string | null;
+}
+
+export interface SupportTierDefinition {
+  id: string;
+  label: string;
+  description: string;
+  amounts?: Partial<Record<SupportCurrency, number>>;
+}
+
+export interface SupportSettings {
+  enabled?: boolean | null;
+  creatorLabel?: string | null;
+  defaultCurrency?: SupportCurrency | null;
+  currencies?: SupportCurrency[];
+  tiers?: SupportTierDefinition[];
+}
+
 export interface SiteSettings {
   siteTitle?: string | null;
   logoUrl?: string | null;
@@ -113,6 +139,8 @@ export interface SiteSettings {
   seoKeywords?: string[];
   copyrightText?: string | null;
   feedbackUrl?: string | null;
+  creatorProfile?: CreatorProfileSettings | null;
+  supportSettings?: SupportSettings | null;
 }
 
 export type ToolOutputDirection = 'yaml-to-json' | 'json-to-yaml';
