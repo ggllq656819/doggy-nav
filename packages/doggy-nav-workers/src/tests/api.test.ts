@@ -140,6 +140,7 @@ jest.mock('../ioc/worker', () => {
               description: 'Latest release',
               mediaType: 'image',
               mediaUrl: 'https://example.com/hero.webp',
+              mediaFit: 'contain',
               active: true,
               order: 0,
             },
@@ -309,6 +310,7 @@ describe('Doggy Nav Worker API', () => {
       expect(data.data.creatorProfile?.name).toBe('Worker Creator');
       expect(data.data.supportSettings?.defaultCurrency).toBe('hkd');
       expect(data.data.heroSlides?.[0]?.mediaUrl).toBe('https://example.com/hero.webp');
+      expect(data.data.heroSlides?.[0]?.mediaFit).toBe('contain');
     });
 
     it('should require auth for admin site settings route', async () => {
@@ -355,6 +357,19 @@ describe('Doggy Nav Worker API', () => {
   });
 
   describe('Authentication', () => {
+    it('should start passkey login', async () => {
+      const response = await app.request('/api/auth/passkey', {
+        method: 'POST',
+        headers: { 'X-Forwarded-Host': 'localhost', 'X-Forwarded-Proto': 'http' },
+      });
+
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data.code).toBe(1);
+      expect(data.data.challenge).toEqual(expect.any(String));
+      expect(response.headers.get('set-cookie')).toContain('passkey_login_challenge=');
+    });
+
     it.skip('should handle registration', async () => {
       (mockDB.prepare().bind().first as jest.Mock<any, any>).mockResolvedValue(null); // No existing user
 

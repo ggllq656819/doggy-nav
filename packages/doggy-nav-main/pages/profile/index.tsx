@@ -1,12 +1,16 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Form, Input, Button, Card, Message, Upload, Avatar } from '@arco-design/web-react';
+import { Form, Input, Button, Message, Upload, Popconfirm } from '@arco-design/web-react';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
+import { Camera, Fingerprint, KeyRound, Mail, ShieldCheck, Trash2, UserRound } from 'lucide-react';
+import { browserSupportsWebAuthn, startRegistration } from '@simplewebauthn/browser';
 import AuthGuard from '@/components/AuthGuard';
+import PageLoading from '@/components/PageLoading';
 import { authStateAtom, authActionsAtom } from '@/store/store';
 import api from '@/utils/api';
+import type { Passkey } from '@/types';
 import { useTranslation } from 'react-i18next';
 
 const FormItem = Form.Item;
@@ -20,15 +24,27 @@ function ProfileContent() {
   const [loading, setLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeySupported, setPasskeySupported] = useState(false);
+  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
 
   const user = authState.user!;
 
   useEffect(() => {
-    user.username && form.setFieldsValue({
-      username: user.username,
-      email: user.email || '',
-    });
+    user.username &&
+      form.setFieldsValue({
+        username: user.username,
+        email: user.email || '',
+      });
   }, [user, form]);
+
+  useEffect(() => {
+    setPasskeySupported(browserSupportsWebAuthn());
+    api
+      .getPasskeys()
+      .then(setPasskeys)
+      .catch(() => setPasskeys([]));
+  }, []);
 
   const handleSubmit = async (values: { username: string; email: string }) => {
     setLoading(true);
@@ -68,13 +84,14 @@ function ProfileContent() {
         currentPassword: values.currentPassword,
         newPassword: values.newPassword,
       });
-      Message.success(t('password_change_success', { defaultValue: 'Password updated successfully!' }));
+      Message.success(
+        t('password_change_success', { defaultValue: 'Password updated successfully!' })
+      );
       passwordForm.resetFields();
     } catch (error: any) {
       console.error('Password update failed:', error);
       Message.error(
-        error?.message ||
-          t('password_change_failed', { defaultValue: 'Failed to update password' })
+        error?.message || t('password_change_failed', { defaultValue: 'Failed to update password' })
       );
     } finally {
       setPasswordLoading(false);
@@ -116,160 +133,326 @@ function ProfileContent() {
     }
   };
 
+  const handleAddPasskey = async () => {
+    setPasskeyLoading(true);
+    try {
+      const optionsJSON = await api.beginPasskeyRegistration();
+      const credential = await startRegistration({ optionsJSON });
+      await api.finishPasskeyRegistration(credential);
+      setPasskeys(await api.getPasskeys());
+      Message.success(t('passkey_added', { defaultValue: 'Passkey added' }));
+    } catch (error: any) {
+      Message.error(
+        error?.message || t('passkey_add_failed', { defaultValue: 'Could not add passkey' })
+      );
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
+
+  const handleDeletePasskey = async (id: string) => {
+    try {
+      await api.deletePasskey(id);
+      setPasskeys((current) => current.filter((passkey) => passkey.id !== id));
+      Message.success(t('passkey_deleted', { defaultValue: 'Passkey removed' }));
+    } catch {
+      Message.error(t('passkey_delete_failed', { defaultValue: 'Could not remove passkey' }));
+    }
+  };
+
   const getAvatarText = (username: string): string => {
     return username.charAt(0).toUpperCase();
   };
 
-  const getAvatarColors = (username: string): string => {
-    const hash = username.split('').reduce((a, b) => {
-      a = ((a << 5) - a) + b.charCodeAt(0);
-      return a & a;
-    }, 0);
-
-    const colors = [
-      'bg-gradient-to-r from-blue-500 to-blue-600',
-      'bg-gradient-to-r from-purple-500 to-purple-600',
-      'bg-gradient-to-r from-green-500 to-green-600',
-      'bg-gradient-to-r from-orange-500 to-orange-600',
-      'bg-gradient-to-r from-pink-500 to-pink-600',
-      'bg-gradient-to-r from-indigo-500 to-indigo-600',
-    ];
-
-    return colors[Math.abs(hash) % colors.length];
-  };
-
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-      >
-        <Card
-          className="profile-card shadow-xl rounded-2xl border border-theme-border transition-colors"
-          style={{
-            background: 'color-mix(in srgb, var(--color-card) 92%, transparent)',
-            backdropFilter: 'blur(16px) saturate(140%)'
-          }}
-        >
-          <div className="p-6">
-            <h1 className="text-2xl font-bold text-theme-foreground mb-6 transition-colors">{t('profile_settings')}</h1>
+    <main className="min-h-full bg-theme-background px-4 py-10 text-theme-foreground sm:px-6 sm:py-14">
+      <div className="mx-auto max-w-6xl">
+        <header className="mb-8 max-w-2xl sm:mb-10">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-theme-muted-foreground">
+            Doggy Nav
+          </p>
+          <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
+            {t('profile_settings')}
+          </h1>
+          <p className="mt-3 text-base leading-7 text-theme-muted-foreground">
+            {t('profile_intro')}
+          </p>
+        </header>
 
-            {/* Avatar Section */}
-            <div className="flex items-center mb-8 pb-6 border-b border-theme-border transition-colors">
-              <div className="mr-6">
-                {user.avatar ? (
-                  <Avatar size={80} className="shadow-lg">
-                    <Image
-                      src={user.avatar}
-                      alt="Avatar"
-                      width={80}
-                      height={80}
-                      style={{ borderRadius: '50%' }}
-                    />
-                  </Avatar>
-                ) : (
-                  <div
-                    className={`${getAvatarColors(user.username)} rounded-full flex items-center justify-center text-white font-bold shadow-lg`}
-                    style={{ width: 80, height: 80, fontSize: 32 }}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45 }}
+          className="grid items-start gap-6 lg:grid-cols-[320px_minmax(0,1fr)]"
+        >
+          <aside className="overflow-hidden rounded-[1.75rem] bg-theme-primary text-theme-primary-foreground shadow-xl lg:sticky lg:top-8">
+            <div className="p-7 sm:p-8">
+              <div className="mb-7 flex items-center gap-5 lg:block">
+                <div className="relative w-fit lg:mb-6">
+                  {user.avatar ? (
+                    <div className="h-24 w-24 overflow-hidden rounded-[1.75rem] bg-theme-primary-foreground/10 ring-4 ring-theme-primary-foreground/10 lg:h-28 lg:w-28">
+                      <Image
+                        src={user.avatar}
+                        alt={`${user.username}'s avatar`}
+                        width={112}
+                        height={112}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-24 w-24 items-center justify-center rounded-[1.75rem] bg-theme-secondary text-3xl font-semibold text-theme-secondary-foreground ring-4 ring-theme-primary-foreground/10 lg:h-28 lg:w-28 lg:text-4xl">
+                      {getAvatarText(user.username)}
+                    </div>
+                  )}
+                  <Upload
+                    accept="image/*"
+                    showUploadList={false}
+                    customRequest={async ({ file }) => {
+                      await handleAvatarUpload(file as File);
+                    }}
                   >
-                    {getAvatarText(user.username)}
-                  </div>
-                )}
+                    <Button
+                      iconOnly
+                      loading={uploadLoading}
+                      icon={<Camera size={17} aria-hidden="true" />}
+                      aria-label={t('change_avatar')}
+                      className="!absolute !-bottom-2 !-right-2 !inline-flex !h-10 !w-10 !items-center !justify-center !rounded-xl !border-0 !bg-theme-primary-foreground !text-theme-primary !shadow-lg"
+                    />
+                  </Upload>
+                </div>
+
+                <div className="min-w-0">
+                  <h2 className="truncate text-2xl font-semibold tracking-[-0.03em]">
+                    {user.username}
+                  </h2>
+                  <p className="mt-1 truncate text-sm text-theme-primary-foreground/65">
+                    {user.email || t('email_not_added')}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-lg font-semibold text-theme-foreground mb-2 transition-colors">{user.username}</h3>
-                <Upload
-                  accept="image/*"
-                  showUploadList={false}
-                  customRequest={async ({ file }) => {
-                    await handleAvatarUpload(file as File);
-                  }}
-                >
-                  <Button type="secondary" size="small" loading={uploadLoading}>
-                    {t('change_avatar')}
-                  </Button>
-                </Upload>
+
+              <div className="border-t border-theme-primary-foreground/15 pt-6">
+                <div className="flex items-start gap-3">
+                  <ShieldCheck
+                    className="mt-0.5 shrink-0 text-theme-primary-foreground/80"
+                    size={20}
+                  />
+                  <div>
+                    <p className="font-medium">{t('security')}</p>
+                    <p className="mt-1 text-sm leading-6 text-theme-primary-foreground/65">
+                      {t('security_summary')}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
+          </aside>
 
-            {/* Profile Form */}
-            <Form
-              form={form}
-              onSubmit={handleSubmit}
-              layout="vertical"
-              requiredSymbol={false}
-            >
-              <FormItem
-                label={<span className="text-theme-foreground font-medium transition-colors">{t('username')}</span>}
-                field="username"
-                disabled
-                rules={[
-                  { required: true, message: t('username_required') },
-                  { minLength: 3, message: t('username_min_length') }
-                ]}
+          <div className="space-y-6">
+            <section className="rounded-[1.75rem] border border-theme-border bg-theme-card p-6 shadow-lg sm:p-8">
+              <div className="mb-7 flex items-start gap-4">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-theme-secondary text-theme-secondary-foreground">
+                  <UserRound size={21} aria-hidden="true" />
+                </span>
+                <div>
+                  <h2 className="text-xl font-semibold tracking-[-0.025em]">
+                    {t('personal_information')}
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-theme-muted-foreground">
+                    {t('personal_information_description')}
+                  </p>
+                </div>
+              </div>
+
+              <Form
+                form={form}
+                onSubmit={handleSubmit}
+                layout="vertical"
+                requiredSymbol={false}
+                className="grid gap-x-5 md:grid-cols-2"
               >
-                <Input
-                  placeholder={t('enter_username')}
-                  size="large"
-                  className="profile-input rounded-xl"
-                />
-              </FormItem>
+                <FormItem
+                  label={<span className="font-medium">{t('username')}</span>}
+                  field="username"
+                  disabled
+                  rules={[
+                    { required: true, message: t('username_required') },
+                    { minLength: 3, message: t('username_min_length') },
+                  ]}
+                >
+                  <Input
+                    placeholder={t('enter_username')}
+                    size="large"
+                    prefix={
+                      <UserRound
+                        size={17}
+                        className="text-theme-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    }
+                    className="theme-form-input theme-form-input-muted !h-12 !rounded-xl"
+                  />
+                </FormItem>
 
-              <FormItem
-                label={<span className="text-theme-foreground font-medium transition-colors">{t('email')}</span>}
-                field="email"
-                disabled={!!user.email}
-                rules={[
-                  { type: 'email', message: t('email_invalid') }
-                ]}
-              >
-                <Input
-                  placeholder={t('enter_email_optional')}
-                  size="large"
-                  className="profile-input rounded-xl"
-                />
-              </FormItem>
+                <FormItem
+                  label={<span className="font-medium">{t('email')}</span>}
+                  field="email"
+                  disabled={!!user.email}
+                  rules={[{ type: 'email', message: t('email_invalid') }]}
+                >
+                  <Input
+                    placeholder={t('enter_email_optional')}
+                    size="large"
+                    prefix={
+                      <Mail size={17} className="text-theme-muted-foreground" aria-hidden="true" />
+                    }
+                    className="theme-form-input theme-form-input-muted !h-12 !rounded-xl"
+                  />
+                </FormItem>
 
-              <FormItem hidden={!!user.email}>
-                <div className="flex gap-4">
+                <FormItem hidden={!!user.email} className="md:col-span-2 !mb-0">
+                  <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      loading={loading}
+                      className="!h-11 !rounded-xl !border-theme-primary !bg-theme-primary !px-6 !font-medium !text-theme-primary-foreground hover:!opacity-90"
+                    >
+                      {loading ? t('updating') : t('update_profile')}
+                    </Button>
+                    <Button
+                      type="secondary"
+                      onClick={() => form.resetFields(['email'])}
+                      className="!h-11 !rounded-xl !border-theme-border !bg-transparent !px-6"
+                    >
+                      {t('reset')}
+                    </Button>
+                  </div>
+                </FormItem>
+              </Form>
+            </section>
+
+            <section className="rounded-[1.75rem] border border-theme-border bg-theme-card p-6 shadow-lg sm:p-8">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-start gap-4">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-theme-secondary text-theme-secondary-foreground">
+                    <Fingerprint size={21} aria-hidden="true" />
+                  </span>
+                  <div>
+                    <h2 className="text-xl font-semibold tracking-[-0.025em]">
+                      {t('passkeys', { defaultValue: 'Passkeys' })}
+                    </h2>
+                    <p className="mt-1 max-w-xl text-sm leading-6 text-theme-muted-foreground">
+                      {t('passkeys_description', {
+                        defaultValue:
+                          'Use your fingerprint, face, or device PIN to sign in without a password.',
+                      })}
+                    </p>
+                  </div>
+                </div>
+                {passkeySupported ? (
                   <Button
                     type="primary"
-                    htmlType="submit"
-                    loading={loading}
-                    className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 border-none rounded-xl font-medium"
+                    icon={<Fingerprint size={17} aria-hidden="true" />}
+                    loading={passkeyLoading}
+                    onClick={handleAddPasskey}
+                    className="!inline-flex !h-11 shrink-0 !items-center !justify-center !rounded-xl !border-theme-primary !bg-theme-primary !px-5 !text-theme-primary-foreground hover:!opacity-90"
                   >
-                    {loading ? t('updating') : t('update_profile')}
+                    {passkeyLoading
+                      ? t('adding_passkey', { defaultValue: 'Waiting for your device…' })
+                      : t('add_passkey', { defaultValue: 'Add a passkey' })}
                   </Button>
-                  <Button
-                    type="secondary"
-                    onClick={() => form.resetFields(['email'])}
-                    className="rounded-xl"
-                  >
-                    {t('reset')}
-                  </Button>
-                </div>
-              </FormItem>
-            </Form>
+                ) : null}
+              </div>
 
-            {/* Password Change Form */}
-            <div className="mt-10 pt-6 border-t border-theme-border transition-colors">
-              <h2 className="text-xl font-semibold text-theme-foreground mb-4 transition-colors">
-                {t('change_password', { defaultValue: 'Change Password' })}
-              </h2>
+              <div className="mt-7 grid gap-3">
+                {passkeys.map((passkey) => (
+                  <div
+                    key={passkey.id}
+                    className="flex items-center gap-4 rounded-2xl border border-theme-border bg-theme-muted p-4"
+                  >
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-theme-secondary text-theme-secondary-foreground">
+                      <KeyRound size={19} aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{passkey.name}</p>
+                      <p className="mt-1 text-xs leading-5 text-theme-muted-foreground">
+                        {t('added_on', {
+                          defaultValue: 'Added {{date}}',
+                          date: new Date(passkey.createdAt).toLocaleDateString(),
+                        })}
+                        {passkey.lastUsedAt
+                          ? ` · ${t('last_used_on', {
+                              defaultValue: 'Last used {{date}}',
+                              date: new Date(passkey.lastUsedAt).toLocaleDateString(),
+                            })}`
+                          : ''}
+                      </p>
+                    </div>
+                    <Popconfirm
+                      title={t('remove_passkey', {
+                        defaultValue: 'Remove this passkey?',
+                      })}
+                      onOk={() => handleDeletePasskey(passkey.id)}
+                    >
+                      <Button
+                        type="text"
+                        status="danger"
+                        iconOnly
+                        icon={<Trash2 size={17} aria-hidden="true" />}
+                        className="!rounded-xl"
+                        aria-label={t('remove_passkey', {
+                          defaultValue: 'Remove this passkey',
+                        })}
+                      />
+                    </Popconfirm>
+                  </div>
+                ))}
+                {passkeys.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-theme-border bg-theme-muted px-5 py-7 text-center">
+                    <Fingerprint
+                      size={24}
+                      className="mx-auto mb-3 text-theme-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <p className="text-sm text-theme-muted-foreground">
+                      {t('no_passkeys', { defaultValue: 'No passkeys added yet.' })}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="rounded-[1.75rem] border border-theme-border bg-theme-card p-6 shadow-lg sm:p-8">
+              <div className="mb-7 flex items-start gap-4">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-theme-secondary text-theme-secondary-foreground">
+                  <KeyRound size={21} aria-hidden="true" />
+                </span>
+                <div>
+                  <h2 className="text-xl font-semibold tracking-[-0.025em]">
+                    {t('change_password', { defaultValue: 'Change Password' })}
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-theme-muted-foreground">
+                    {t('password_description')}
+                  </p>
+                </div>
+              </div>
+
               <Form
                 form={passwordForm}
                 onSubmit={handlePasswordSubmit}
                 layout="vertical"
                 requiredSymbol={false}
+                className="grid gap-x-5 md:grid-cols-2"
               >
                 <FormItem
                   label={
-                    <span className="text-theme-foreground font-medium transition-colors">
+                    <span className="font-medium">
                       {t('current_password', { defaultValue: 'Current Password' })}
                     </span>
                   }
                   field="currentPassword"
+                  className="md:col-span-2"
                   rules={[
                     {
                       required: true,
@@ -284,13 +467,20 @@ function ProfileContent() {
                       defaultValue: 'Enter your current password',
                     })}
                     size="large"
-                    className="profile-input rounded-xl"
+                    prefix={
+                      <KeyRound
+                        size={17}
+                        className="text-theme-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    }
+                    className="theme-form-input theme-form-input-muted !h-12 !rounded-xl"
                   />
                 </FormItem>
 
                 <FormItem
                   label={
-                    <span className="text-theme-foreground font-medium transition-colors">
+                    <span className="font-medium">
                       {t('new_password', { defaultValue: 'New Password' })}
                     </span>
                   }
@@ -313,13 +503,13 @@ function ProfileContent() {
                       defaultValue: 'Enter your new password',
                     })}
                     size="large"
-                    className="profile-input rounded-xl"
+                    className="theme-form-input theme-form-input-muted !h-12 !rounded-xl"
                   />
                 </FormItem>
 
                 <FormItem
                   label={
-                    <span className="text-theme-foreground font-medium transition-colors">
+                    <span className="font-medium">
                       {t('confirm_new_password', { defaultValue: 'Confirm New Password' })}
                     </span>
                   }
@@ -348,17 +538,17 @@ function ProfileContent() {
                       defaultValue: 'Confirm your new password',
                     })}
                     size="large"
-                    className="profile-input rounded-xl"
+                    className="theme-form-input theme-form-input-muted !h-12 !rounded-xl"
                   />
                 </FormItem>
 
-                <FormItem>
-                  <div className="flex gap-4">
+                <FormItem className="md:col-span-2 !mb-0">
+                  <div className="flex flex-col gap-3 pt-2 sm:flex-row">
                     <Button
                       type="primary"
                       htmlType="submit"
                       loading={passwordLoading}
-                      className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 border-none rounded-xl font-medium"
+                      className="!h-11 !rounded-xl !border-theme-primary !bg-theme-primary !px-6 !font-medium !text-theme-primary-foreground hover:!opacity-90"
                     >
                       {passwordLoading
                         ? t('updating', { defaultValue: 'Updating...' })
@@ -367,41 +557,24 @@ function ProfileContent() {
                     <Button
                       type="secondary"
                       onClick={() => passwordForm.resetFields()}
-                      className="rounded-xl"
+                      className="!h-11 !rounded-xl !border-theme-border !bg-transparent !px-6"
                     >
                       {t('reset')}
                     </Button>
                   </div>
                 </FormItem>
               </Form>
-            </div>
+            </section>
           </div>
-        </Card>
-      </motion.div>
-    </div>
+        </motion.div>
+      </div>
+    </main>
   );
 }
 
 export default function ProfilePage() {
-  const { t } = useTranslation('translation');
-
   return (
-    <AuthGuard
-      fallback={
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div
-              className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4"
-              style={{
-                borderColor: 'color-mix(in srgb, var(--color-primary) 70%, transparent)',
-                borderTopColor: 'transparent'
-              }}
-            ></div>
-            <p className="text-theme-muted-foreground transition-colors">{t('loading')}</p>
-          </div>
-        </div>
-      }
-    >
+    <AuthGuard fallback={<PageLoading />}>
       <ProfileContent />
     </AuthGuard>
   );

@@ -72,6 +72,13 @@ export interface LoginFormValues {
   password: string;
 }
 
+export interface Passkey {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt?: string | null;
+}
+
 export interface RegisterFormValues {
   username: string;
   email: string;
@@ -136,6 +143,7 @@ export interface HeroSlideSettings {
   description: string;
   mediaType?: 'image' | 'video';
   mediaUrl?: string;
+  mediaFit?: 'cover' | 'contain';
   ctaLabel?: string;
   ctaHref?: string;
   active: boolean;

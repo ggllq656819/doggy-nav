@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Form, Input, Button, Message } from '@arco-design/web-react';
+import { Button, Form, Input, Message } from '@arco-design/web-react';
 import { useSetAtom } from 'jotai';
-import { motion } from 'framer-motion';
+import { ArrowLeft, Fingerprint, LockKeyhole, UserRound } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { browserSupportsWebAuthn, startAuthentication } from '@simplewebauthn/browser';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
+import { GitHubIcon, GoogleIcon, LinuxDoIcon } from '@/components/OAuthIcons';
+import ThemeToggle from '@/components/Buttons/ThemeToggle';
 import { authActionsAtom } from '@/store/store';
+import type { LoginFormValues, OAuthProvider } from '@/types';
 import api from '@/utils/api';
 import { setAccessExpEpochMs } from '@/utils/session';
-import type { LoginFormValues, OAuthProvider } from '@/types';
-import { useTranslation } from 'react-i18next';
-import { GitHubIcon, GoogleIcon, LinuxDoIcon } from '@/components/OAuthIcons';
-import { User, Lock, LogIn } from 'lucide-react';
 
 const FormItem = Form.Item;
 
@@ -17,44 +21,18 @@ export default function LoginPage() {
   const { t } = useTranslation('translation');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeySupported, setPasskeySupported] = useState(false);
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
   const dispatchAuth = useSetAtom(authActionsAtom);
   const router = useRouter();
+  const busy = loading || passkeyLoading;
 
-  const handleSubmit = async (values: LoginFormValues) => {
-    setLoading(true);
-    try {
-      const { user } = await api.login(values);
-      dispatchAuth({
-        type: 'LOGIN',
-        payload: {
-          user: { ...user, id: user.id ?? 'admin' },
-        },
-      });
+  useEffect(() => {
+    setPasskeySupported(browserSupportsWebAuthn());
+  }, []);
 
-      Message.success(t('login_successful'));
-
-      // Prime proactive refresh by fetching accessExp after cookies are set
-      try {
-        const me: any = await api.getCurrentUser();
-        if (typeof me?.accessExp === 'number') setAccessExpEpochMs(me.accessExp);
-      } catch {}
-
-      // Redirect to home or previous page
-      const redirectTo = (router.query.redirect as string) || '/';
-      router.push(redirectTo);
-    } catch (error: unknown) {
-      if (typeof error === 'object' && error !== null && 'message' in error) {
-        Message.error((error as { message?: string }).message || t('login_failed'));
-      } else {
-        Message.error(t('login_failed'));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const providerMeta = useMemo<Record<OAuthProvider, { icon: React.ReactNode; label: string }>>(
+  const providerMeta = useMemo<Record<OAuthProvider, { icon: ReactNode; label: string }>>(
     () => ({
       github: {
         icon: <GitHubIcon />,
@@ -72,276 +50,273 @@ export default function LoginPage() {
     [t]
   );
 
-  const handleOAuthLogin = (provider: OAuthProvider) => {
-    window.location.href = `/api/auth/${provider}`;
-  };
-
   useEffect(() => {
     let mounted = true;
     api
       .getAuthProviders()
       .then((res) => {
         if (!mounted) return;
-        if (Array.isArray(res?.providers)) {
-          const normalized = (res.providers as unknown[]).filter(
-            (provider): provider is OAuthProvider =>
-              typeof provider === 'string' && provider in providerMeta
-          );
-          setProviders(normalized);
-        } else {
-          setProviders([]);
-        }
+        const available = Array.isArray(res?.providers)
+          ? (res.providers as unknown[]).filter(
+              (provider): provider is OAuthProvider =>
+                typeof provider === 'string' && provider in providerMeta
+            )
+          : [];
+        setProviders(available);
       })
       .catch(() => setProviders([]));
+
     return () => {
       mounted = false;
     };
   }, [providerMeta]);
 
+  const handleSubmit = async (values: LoginFormValues) => {
+    setLoading(true);
+    try {
+      const { user } = await api.login(values);
+      dispatchAuth({
+        type: 'LOGIN',
+        payload: { user: { ...user, id: user.id ?? 'admin' } },
+      });
+      Message.success(t('login_successful'));
+
+      try {
+        const me = await api.getCurrentUser();
+        if (typeof me.accessExp === 'number') setAccessExpEpochMs(me.accessExp);
+      } catch {}
+
+      await router.push((router.query.redirect as string) || '/');
+    } catch (error: unknown) {
+      Message.error(
+        typeof error === 'object' && error !== null && 'message' in error
+          ? (error as { message?: string }).message || t('login_failed')
+          : t('login_failed')
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    setPasskeyLoading(true);
+    try {
+      const optionsJSON = await api.beginPasskeyLogin();
+      const credential = await startAuthentication({ optionsJSON });
+      const { user } = await api.finishPasskeyLogin(credential);
+      dispatchAuth({ type: 'LOGIN', payload: { user } });
+      Message.success(t('login_successful'));
+      await router.push((router.query.redirect as string) || '/');
+    } catch (error: unknown) {
+      Message.error(
+        typeof error === 'object' && error !== null && 'message' in error
+          ? (error as { message?: string }).message ||
+              t('passkey_login_failed', { defaultValue: 'Passkey sign-in failed' })
+          : t('passkey_login_failed', { defaultValue: 'Passkey sign-in failed' })
+      );
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-slate-900 p-4 sm:p-6 lg:p-8">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
-        <div className="absolute top-3/4 right-1/4 w-64 h-64 bg-purple-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse delay-1000"></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-pink-400 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-pulse delay-500"></div>
-      </div>
+    <main className="min-h-[100dvh] bg-theme-background text-theme-foreground lg:flex">
+      <section className="relative hidden min-h-[100dvh] w-[58%] overflow-hidden lg:block">
+        <Image
+          src="/login-editorial.webp"
+          alt="A golden retriever resting in a quiet reading room"
+          fill
+          priority
+          sizes="58vw"
+          className="object-cover"
+        />
+        <div className="absolute inset-0 bg-black/25" aria-hidden="true" />
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="relative z-10"
-      >
-        <div className="relative">
-          {/* Glass card */}
-          <div
-            className="bg-white dark:bg-gray-800 bg-opacity-25 dark:bg-opacity-85 backdrop-filter backdrop-blur-xl backdrop-saturate-150 rounded-3xl border border-white dark:border-gray-600 border-opacity-30 dark:border-opacity-50 shadow-2xl p-6 sm:p-8 w-full max-w-md sm:max-w-lg"
-            aria-busy={loading}
+        <Link
+          href="/"
+          className="absolute left-10 top-9 flex items-center gap-3 text-white focus-visible:outline-2 focus-visible:outline-offset-4"
+          aria-label={t('back_to_home')}
+        >
+          <span className="grid h-11 w-11 place-items-center rounded-xl bg-white">
+            <Image src="/logo-icon.png" alt="" width={25} height={27} />
+          </span>
+          <span className="text-base font-semibold tracking-wide">Doggy Nav</span>
+        </Link>
+
+        <div className="absolute bottom-12 left-10 max-w-md text-white">
+          <p className="mb-4 text-xs font-semibold uppercase tracking-[0.24em] text-white/75">
+            Curated for curious minds
+          </p>
+          <p className="text-3xl font-medium leading-tight">
+            Keep the corners of the internet worth returning to.
+          </p>
+        </div>
+      </section>
+
+      <section className="relative flex min-h-[100dvh] flex-1 items-center justify-center px-6 py-20 sm:px-10">
+        <div className="absolute right-5 top-5 flex items-center gap-2">
+          <LanguageSwitcher className="!border-theme-border !bg-transparent" />
+          <ThemeToggle className="!border-theme-border !bg-transparent" />
+        </div>
+
+        <div className="w-full max-w-[390px]" aria-busy={busy}>
+          <Link
+            href="/"
+            className="mb-12 inline-flex items-center gap-2 text-sm font-medium text-theme-muted-foreground transition-colors hover:text-theme-primary lg:hidden"
           >
-            {/* Subtle inner glow effect */}
-            <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-white/20 dark:from-white/5 to-transparent pointer-events-none"></div>
-            {/* Logo and title */}
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              className="text-center mb-8"
-            >
-              <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-3xl flex items-center justify-center shadow-xl relative overflow-hidden group">
-                {/* Decorative inner ring */}
-                <div className="absolute inset-2 rounded-2xl bg-white/10 backdrop-blur-sm"></div>
-                <svg
-                  className="w-8 h-8 sm:w-10 sm:h-10 text-white relative z-10 group-hover:scale-110 transition-transform duration-500"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-                </svg>
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-gray-100 mb-3 bg-gradient-to-r from-gray-800 to-gray-600 dark:from-gray-100 dark:to-gray-300 bg-clip-text">
-                {t('welcome_back')}
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 text-base sm:text-lg">
-                {t('sign_in_to_account')}
-              </p>
-            </motion.div>
+            <ArrowLeft size={16} aria-hidden="true" />
+            {t('back_to_home').replace('←', '').trim()}
+          </Link>
 
-            {/* Login form */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
-            >
-              <Form form={form} onSubmit={handleSubmit} layout="vertical" requiredSymbol={false}>
-                <FormItem
-                  label={
-                    <span className="text-gray-700 dark:text-gray-300 font-semibold">
-                      {t('username')}
-                    </span>
-                  }
-                  field="username"
-                  rules={[
-                    { required: true, message: t('username_required') },
-                    { minLength: 3, message: t('username_min_length') },
-                  ]}
-                >
-                  <Input
-                    disabled={loading}
-                    placeholder={t('enter_username')}
-                    size="large"
-                    className="bg-white dark:bg-gray-700 bg-opacity-60 dark:bg-opacity-90 border-white dark:border-gray-500 border-opacity-40 dark:border-opacity-60 backdrop-filter backdrop-blur-md rounded-xl text-gray-900 dark:text-gray-100 hover:bg-opacity-70 dark:hover:bg-opacity-95 transition-all duration-300 focus:bg-opacity-80 dark:focus:bg-opacity-100 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    prefix={
-                      <span className="w-5 h-5 flex items-center justify-center">
-                        <User className="text-gray-400 dark:text-gray-300" size={20} />
-                      </span>
-                    }
-                  />
-                </FormItem>
-
-                <FormItem
-                  label={
-                    <span className="text-gray-700 dark:text-gray-300 font-semibold">
-                      {t('password')}
-                    </span>
-                  }
-                  field="password"
-                  rules={[
-                    { required: true, message: t('password_required') },
-                    { minLength: 6, message: t('password_min_length') },
-                  ]}
-                >
-                  <Input.Password
-                    disabled={loading}
-                    placeholder={t('enter_password')}
-                    size="large"
-                    className="bg-white dark:bg-gray-700 bg-opacity-60 dark:bg-opacity-90 border-white dark:border-gray-500 border-opacity-40 dark:border-opacity-60 backdrop-filter backdrop-blur-md rounded-xl text-gray-900 dark:text-gray-100 hover:bg-opacity-70 dark:hover:bg-opacity-95 transition-all duration-300 focus:bg-opacity-80 dark:focus:bg-opacity-100 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    prefix={
-                      <span className="w-5 h-5 flex items-center justify-center">
-                        <Lock className="text-gray-400 dark:text-gray-300" size={20} />
-                      </span>
-                    }
-                  />
-                </FormItem>
-
-                <FormItem>
-                  <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                    <Button
-                      type="primary"
-                      htmlType="submit"
-                      disabled={loading}
-                      size="large"
-                      className="w-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 border-none rounded-xl font-semibold text-white shadow-xl hover:shadow-2xl transition-all duration-300 backdrop-blur-sm"
-                    >
-                      <div className="flex items-center justify-center">
-                        {loading ? (
-                          <svg
-                            className="animate-spin mr-2 h-5 w-5"
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                          >
-                            <circle
-                              className="opacity-25"
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              strokeWidth="4"
-                            />
-                            <path
-                              className="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                            />
-                          </svg>
-                        ) : (
-                          <LogIn className="mr-2" size={20} />
-                        )}
-                        {t('sign_in_button')}
-                      </div>
-                    </Button>
-                  </motion.div>
-                </FormItem>
-              </Form>
-              {providers.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.5 }}
-                >
-                  {/* Divider */}
-                  <div className="relative flex items-center justify-center my-4">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-gray-200 dark:border-gray-600 border-opacity-30"></div>
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                      <span className="px-4 bg-transparent text-gray-500 dark:text-gray-400">
-                        {t('or_continue_with', { defaultValue: 'Or continue with' })}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* OAuth Buttons */}
-                  <div className="space-y-2">
-                    {providers.map((p, index) => (
-                      <motion.div
-                        key={p}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.4, delay: 0.6 + index * 0.1 }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => handleOAuthLogin(p)}
-                          disabled={loading}
-                          className={`w-full cursor-pointer flex items-center justify-center gap-3 px-6 py-3 rounded-xl border border-gray-200 dark:border-gray-500 bg-white dark:bg-gray-700 bg-opacity-50 dark:bg-opacity-80 backdrop-filter backdrop-blur-sm hover:bg-opacity-70 dark:hover:bg-opacity-90 transition-all duration-300 shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] group outline-none focus:ring-2 focus:ring-blue-500/20 ${
-                            p === 'github'
-                              ? 'hover:border-gray-900 dark:hover:border-gray-100'
-                              : p === 'google'
-                                ? 'hover:border-blue-300 dark:hover:border-blue-400'
-                                : 'hover:border-gray-500 dark:hover:border-gray-300'
-                          }`}
-                        >
-                          <div
-                            className={`flex items-center justify-center rounded-full transition-all duration-300 flex-shrink-0 ${
-                              p === 'github'
-                                ? 'bg-gray-900 text-white group-hover:bg-gray-800 p-1.5'
-                                : p === 'google'
-                                  ? 'text-white bg-transparent'
-                                  : 'bg-gray-600 text-white group-hover:bg-gray-700 p-1.5'
-                            }`}
-                          >
-                            {providerMeta[p].icon}
-                          </div>
-                          <span className="font-medium text-gray-700 dark:text-gray-200 transition-colors duration-300 text-center">
-                            {providerMeta[p].label}
-                          </span>
-                        </button>
-                      </motion.div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </motion.div>
-
-            {/* Footer */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.6 }}
-              className="text-center mt-6"
-            >
-              <p className="text-gray-600 dark:text-gray-400 text-sm">
-                {t('no_account')}{' '}
-                <button
-                  onClick={() => router.push('/register')}
-                  className="cursor-pointer text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium hover:underline transition-colors duration-200"
-                >
-                  {t('sign_up')}
-                </button>
-              </p>
-              <div className="mt-4 pt-4 border-t border-white dark:border-gray-600 border-opacity-30 dark:border-opacity-50">
-                <button
-                  onClick={() => router.push('/')}
-                  className="cursor-pointer text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 text-sm transition-colors duration-200"
-                >
-                  {t('back_to_home')}
-                </button>
-              </div>
-            </motion.div>
+          <div className="mb-9">
+            <div className="mb-7 flex items-center gap-3 lg:hidden">
+              <span className="grid h-11 w-11 place-items-center rounded-xl bg-theme-card shadow-sm">
+                <Image src="/logo-icon.png" alt="" width={25} height={27} />
+              </span>
+              <span className="font-semibold tracking-wide">Doggy Nav</span>
+            </div>
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-theme-muted-foreground">
+              Doggy Nav
+            </p>
+            <h1 className="text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
+              {t('welcome_back')}
+            </h1>
+            <p className="mt-3 text-base leading-6 text-theme-muted-foreground">
+              {t('sign_in_to_account')}
+            </p>
           </div>
 
-          {loading && (
-            <div className="absolute inset-0 z-20 grid place-items-center bg-neutral-900/10 dark:bg-neutral-900/40 backdrop-blur-glass-lg rounded-3xl" />
-          )}
+          <Form
+            form={form}
+            onSubmit={handleSubmit}
+            layout="vertical"
+            requiredSymbol={false}
+            disabled={busy}
+            autoComplete="on"
+          >
+            <FormItem
+              label={<span className="font-medium">{t('username')}</span>}
+              field="username"
+              rules={[
+                { required: true, message: t('username_required') },
+                { minLength: 3, message: t('username_min_length') },
+              ]}
+            >
+              <Input
+                name="username"
+                autoComplete="username"
+                placeholder={t('enter_username')}
+                size="large"
+                className="theme-form-input !h-12 !rounded-xl"
+                prefix={
+                  <UserRound size={18} className="text-theme-muted-foreground" aria-hidden="true" />
+                }
+              />
+            </FormItem>
+
+            <FormItem
+              label={<span className="font-medium">{t('password')}</span>}
+              field="password"
+              rules={[
+                { required: true, message: t('password_required') },
+                { minLength: 6, message: t('password_min_length') },
+              ]}
+            >
+              <Input.Password
+                name="password"
+                autoComplete="current-password"
+                placeholder={t('enter_password')}
+                size="large"
+                className="theme-form-input !h-12 !rounded-xl"
+                prefix={
+                  <LockKeyhole
+                    size={18}
+                    className="text-theme-muted-foreground"
+                    aria-hidden="true"
+                  />
+                }
+              />
+            </FormItem>
+
+            <FormItem className="!mb-0 !mt-2">
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={loading}
+                loadingFixedWidth
+                long
+                size="large"
+                className="!h-12 !rounded-xl !border-theme-primary !bg-theme-primary !font-semibold !text-theme-primary-foreground !shadow-none hover:!opacity-90"
+              >
+                {loading ? t('signing_in') : t('sign_in_button')}
+              </Button>
+            </FormItem>
+          </Form>
+
+          {passkeySupported ? (
+            <div className="mt-7">
+              <div className="mb-4 flex items-center gap-4 text-xs text-theme-muted-foreground">
+                <span className="h-px flex-1 bg-theme-border" />
+                {t('or', { defaultValue: 'Or' })}
+                <span className="h-px flex-1 bg-theme-border" />
+              </div>
+              <button
+                type="button"
+                onClick={handlePasskeyLogin}
+                disabled={busy}
+                className="flex h-12 w-full cursor-pointer items-center justify-center gap-3 rounded-xl border border-theme-primary/40 bg-theme-secondary px-4 font-semibold text-theme-secondary-foreground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-theme-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Fingerprint size={20} aria-hidden="true" />
+                {passkeyLoading
+                  ? t('passkey_signing_in', { defaultValue: 'Waiting for your passkey…' })
+                  : t('sign_in_with_passkey', { defaultValue: 'Sign in with a passkey' })}
+              </button>
+            </div>
+          ) : null}
+
+          {providers.length > 0 ? (
+            <div className="mt-7">
+              <div className="mb-4 flex items-center gap-4 text-xs text-theme-muted-foreground">
+                <span className="h-px flex-1 bg-theme-border" />
+                {t('or_continue_with', { defaultValue: 'Or continue with' })}
+                <span className="h-px flex-1 bg-theme-border" />
+              </div>
+              <div className="grid gap-3">
+                {providers.map((provider) => (
+                  <button
+                    key={provider}
+                    type="button"
+                    onClick={() => {
+                      window.location.href = `/api/auth/${provider}`;
+                    }}
+                    disabled={busy}
+                    className="flex h-12 cursor-pointer items-center justify-center gap-3 rounded-xl border border-theme-border bg-transparent px-4 font-medium transition-colors hover:border-theme-primary hover:bg-theme-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-theme-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span className="grid h-5 w-5 place-items-center">
+                      {providerMeta[provider].icon}
+                    </span>
+                    {providerMeta[provider].label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <p className="mt-8 text-center text-sm text-theme-muted-foreground">
+            {t('no_account')}{' '}
+            <Link
+              href="/register"
+              className="font-semibold text-theme-primary underline decoration-theme-border underline-offset-4 hover:decoration-theme-primary"
+            >
+              {t('sign_up')}
+            </Link>
+          </p>
         </div>
-      </motion.div>
-    </div>
+      </section>
+    </main>
   );
 }
 
-// Use custom layout to hide sidebar and header
-LoginPage.getLayout = function getLayout(page: React.ReactElement) {
-  return <>{page}</>;
+LoginPage.getLayout = function getLayout(page: ReactElement) {
+  return page;
 };
